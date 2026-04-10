@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Exercises - PT Tracker{% endblock %}
+{% block content %}
+<h1 style="font-size:1.75rem;font-weight:700;margin-bottom:1.5rem;">Supported Exercises</h1>
+<div id="exercises-grid" class="grid grid-3"></div>
+<div class="card" style="margin-top:1.5rem;">
+    <div class="card-header">Gold Standard Approach</div>
+    <p style="color:var(--gray-600);font-size:0.95rem;">
+        Each exercise is defined by a gold standard skeletal template sourced from sessions performed by certified
+        physical therapists under controlled conditions. Joint angles, tolerances, and clinically-weighted scoring
+        ensure that feedback is grounded in professional expertise rather than purely data-driven heuristics.
+        Key joints involved in each exercise receive higher weight in the scoring function, reflecting their
+        clinical significance for that specific movement pattern.
+    </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function() {
+    const resp = await fetch('/api/exercises');
+    const data = await resp.json();
+    const grid = document.getElementById('exercises-grid');
+
+    const categoryColors = {
+        'Lower Body': '#2563eb',
+        'Upper Body': '#16a34a',
+        'Flexibility': '#d97706',
+    };
+    const diffBadges = {
+        'Beginner': 'badge-success',
+        'Intermediate': 'badge-warning',
+    };
+
+    data.exercises.forEach(ex => {
+        const card = document.createElement('div');
+        card.className = 'exercise-card';
+        const color = categoryColors[ex.category] || 'var(--primary)';
+        card.innerHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:start;margin-bottom:8px;">
+                <span class="badge" style="background:${color}15;color:${color};">${ex.category}</span>
+                <span class="badge ${diffBadges[ex.difficulty] || 'badge-primary'}">${ex.difficulty}</span>
+            </div>
+            <div class="exercise-name">${ex.name}</div>
+            <div class="exercise-desc">${ex.description}</div>
+            <a href="/analyze?exercise=${ex.id}" class="btn btn-primary" style="width:100%;justify-content:center;margin-top:8px;">Analyze This Exercise</a>
+        `;
+        grid.appendChild(card);
+    });
+})();
+</script>
+{% endblock %}

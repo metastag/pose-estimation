@@ -1,0 +1,260 @@
+{% extends "base.html" %}
+{% block title %}Progress - PT Tracker{% endblock %}
+{% block content %}
+<h1 style="font-size:1.75rem;font-weight:700;margin-bottom:1.5rem;">Progress Tracking</h1>
+
+<div id="alert-area"></div>
+
+<div class="card">
+    <div class="card-header">Select Patient & Exercise</div>
+    <div class="grid grid-3">
+        <div class="form-group">
+            <label for="patient-id">Patient ID</label>
+            <input type="text" id="patient-id" class="form-control" placeholder="Enter patient ID" value="patient_001">
+        </div>
+        <div class="form-group">
+            <label for="exercise-select">Exercise</label>
+            <select id="exercise-select" class="form-control">
+                <option value="">Select an exercise...</option>
+            </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;">
+            <button id="load-btn" class="btn btn-primary" style="width:100%;justify-content:center;">Load Progress</button>
+        </div>
+    </div>
+</div>
+
+<div id="progress-content" style="display:none;">
+    <div class="grid grid-4" id="stats-grid"></div>
+
+    <div class="grid grid-2">
+        <div class="card">
+            <div class="card-header">Score Over Sessions</div>
+            <div id="score-chart" class="chart-container"></div>
+        </div>
+        <div class="card">
+            <div class="card-header">Joint Error Trends</div>
+            <div id="joint-chart" class="chart-container"></div>
+        </div>
+    </div>
+
+    <div class="grid grid-2">
+        <div class="card">
+            <div class="card-header">Trend Analysis</div>
+            <div id="trend-info"></div>
+        </div>
+        <div class="card">
+            <div class="card-header">Session History</div>
+            <div id="session-history"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div style="display:flex;gap:12px;">
+            <a id="report-link" href="#" class="btn btn-primary" target="_blank">Download PDF Report</a>
+            <a href="/analyze" class="btn btn-outline">New Analysis</a>
+        </div>
+    </div>
+</div>
+
+<div id="no-data" style="display:none;">
+    <div class="card">
+        <div class="empty-state">
+            <div class="empty-state-icon">&#128200;</div>
+            <div class="empty-state-title">No progress data yet</div>
+            <div class="empty-state-text">Analyze an exercise video first to start tracking progress.</div>
+            <a href="/analyze" class="btn btn-primary" style="margin-top:1rem;">Go to Analyze</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showAlert(msg, type='danger') {
+    const area = document.getElementById('alert-area');
+    area.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+    setTimeout(() => area.innerHTML = '', 5000);
+}
+
+async function loadExercises() {
+    const resp = await fetch('/api/exercises');
+    const data = await resp.json();
+    const sel = document.getElementById('exercise-select');
+    data.exercises.forEach(ex => {
+        const opt = document.createElement('option');
+        opt.value = ex.id;
+        opt.textContent = `${ex.name} (${ex.category})`;
+        sel.appendChild(opt);
+    });
+    const params = new URLSearchParams(window.location.search);
+    const pPatient = params.get('patient');
+    const pExercise = params.get('exercise');
+    if (pPatient) document.getElementById('patient-id').value = pPatient;
+    if (pExercise) sel.value = pExercise;
+    if (pPatient && pExercise) loadProgress();
+}
+
+function scoreClass(s) {
+    if (s >= 80) return 'score-excellent';
+    if (s >= 60) return 'score-good';
+    if (s >= 40) return 'score-fair';
+    return 'score-poor';
+}
+
+async function loadProgress() {
+    const patientId = document.getElementById('patient-id').value.trim();
+    const exerciseId = document.getElementById('exercise-select').value;
+
+    if (!patientId || !exerciseId) {
+        showAlert('Please enter a Patient ID and select an exercise.');
+        return;
+    }
+
+    document.getElementById('report-link').href = `/api/report/${patientId}/${exerciseId}`;
+
+    try {
+        const resp = await fetch(`/api/progress/${patientId}/${exerciseId}`);
+        if (!resp.ok) {
+            document.getElementById('progress-content').style.display = 'none';
+            document.getElementById('no-data').style.display = 'block';
+            return;
+        }
+        const data = await resp.json();
+        renderProgress(data, patientId, exerciseId);
+    } catch (err) {
+        showAlert('Error loading progress: ' + err.message);
+    }
+}
+
+function renderProgress(data, patientId, exerciseId) {
+    document.getElementById('progress-content').style.display = 'block';
+    document.getElementById('no-data').style.display = 'none';
+
+    const sc = scoreClass(data.latest_score);
+    document.getElementById('stats-grid').innerHTML = `
+        <div class="stat-card"><div class="stat-value">${data.total_sessions}</div><div class="stat-label">Total Sessions</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:${data.latest_score>=70?'var(--success)':data.latest_score>=50?'var(--warning)':'var(--danger)'}">${data.latest_score}</div><div class="stat-label">Latest Score</div></div>
+        <div class="stat-card"><div class="stat-value" style="color:var(--success)">${data.best_score}</div><div class="stat-label">Best Score</div></div>
+        <div class="stat-card"><div class="stat-value">${data.trend.direction === 'improving' ? '&#128wards;' : data.trend.direction === 'declining' ? '&#128 downwards;' : '&#10149;'}</div><div class="stat-label">Trend</div></div>
+    `;
+
+    renderScoreChart(data);
+    renderJointChart(data);
+    renderTrendInfo(data);
+    renderSessionHistory(patientId, exerciseId, data);
+}
+
+function renderScoreChart(data) {
+    const dates = data.dates;
+    const scores = data.scores;
+
+    const trace = {
+        x: dates,
+        y: scores,
+        type: 'scatter',
+        mode: 'lines+markers',
+        line: { color: '#2563eb', width: 3 },
+        marker: { size: 10, color: scores.map(s => s >= 80 ? '#16a34a' : s >= 60 ? '#2563eb' : s >= 40 ? '#d97706' : '#dc2626') },
+        name: 'Score',
+    };
+
+    const layout = {
+        margin: { t: 20, r: 30, b: 60, l: 50 },
+        yaxis: { range: [0, 105], title: 'Score', gridcolor: '#f0f0f0' },
+        xaxis: { title: 'Session Date', gridcolor: '#f0f0f0' },
+        shapes: [
+            { type: 'line', x0: dates[0], x1: dates[dates.length-1], y0: 70, y1: 70, line: { color: '#d97706', width: 1, dash: 'dash' } },
+        ],
+        plot_bgcolor: 'white',
+        paper_bgcolor: 'white',
+    };
+
+    Plotly.newPlot('score-chart', [trace], layout, { responsive: true });
+}
+
+function renderJointChart(data) {
+    const jointTrends = data.joint_trends;
+    const joints = Object.keys(jointTrends);
+    if (!joints.length) return;
+
+    const traces = joints.map((joint, i) => ({
+        x: data.dates.slice(0, jointTrends[joint].length),
+        y: jointTrends[joint],
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: joint.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        line: { width: 2 },
+    }));
+
+    const layout = {
+        margin: { t: 20, r: 30, b: 60, l: 50 },
+        yaxis: { title: 'Avg Error (deg)', gridcolor: '#f0f0f0' },
+        xaxis: { title: 'Session Date', gridcolor: '#f0f0f0' },
+        shapes: [
+            { type: 'line', x0: data.dates[0], x1: data.dates[data.dates.length-1], y0: 10, y1: 10, line: { color: '#d97706', width: 1, dash: 'dash' } },
+            { type: 'line', x0: data.dates[0], x1: data.dates[data.dates.length-1], y0: 15, y1: 15, line: { color: '#dc2626', width: 1, dash: 'dash' } },
+        ],
+        plot_bgcolor: 'white',
+        paper_bgcolor: 'white',
+        legend: { orientation: 'h', y: -0.3 },
+    };
+
+    Plotly.newPlot('joint-chart', traces, layout, { responsive: true });
+}
+
+function renderTrendInfo(data) {
+    const trend = data.trend;
+    const dirIcon = { improving: '&#128wards;', declining: '&#128 downwards;', stable: '&#10149;', insufficient_data: '&#63;' };
+    const dirColor = { improving: 'var(--success)', declining: 'var(--danger)', stable: 'var(--primary)', insufficient_data: 'var(--gray-400)' };
+
+    document.getElementById('trend-info').innerHTML = `
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+            <span style="font-size:2rem;">${dirIcon[trend.direction] || ''}</span>
+            <div>
+                <div style="font-size:1.2rem;font-weight:700;color:${dirColor[trend.direction]};">${trend.direction.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase())}</div>
+                <div style="font-size:0.85rem;color:var(--gray-500);">Slope: ${trend.slope} pts/session | Change: ${trend.improvement_pct}%</div>
+            </div>
+        </div>
+        <p style="color:var(--gray-600);font-size:0.95rem;">${trend.description}</p>
+    `;
+}
+
+async function renderSessionHistory(patientId, exerciseId, progressData) {
+    try {
+        const resp = await fetch(`/api/progress/${patientId}/${exerciseId}/sessions`);
+        const data = await resp.json();
+
+        if (!data.sessions || !data.sessions.length) {
+            document.getElementById('session-history').innerHTML = '<p style="color:var(--gray-400);">No sessions found.</p>';
+            return;
+        }
+
+        const rows = data.sessions.reverse().map(s => `
+            <tr>
+                <td>${s.timestamp ? s.timestamp.substring(0, 10) : 'N/A'}</td>
+                <td><strong>${s.overall_score}</strong>/100</td>
+                <td>${s.num_reps}</td>
+                <td>${s.detected_frames}</td>
+                <td><span class="badge ${s.overall_score >= 70 ? 'badge-success' : s.overall_score >= 50 ? 'badge-warning' : 'badge-danger'}">${s.overall_score >= 70 ? 'Good' : s.overall_score >= 50 ? 'Fair' : 'Needs Work'}</span></td>
+            </tr>
+        `).join('');
+
+        document.getElementById('session-history').innerHTML = `
+            <div class="table-wrapper">
+                <table>
+                    <thead><tr><th>Date</th><th>Score</th><th>Reps</th><th>Frames</th><th>Rating</th></tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `;
+    } catch (err) {
+        document.getElementById('session-history').innerHTML = '<p style="color:var(--gray-400);">Could not load session history.</p>';
+    }
+}
+
+document.getElementById('load-btn').addEventListener('click', loadProgress);
+
+loadExercises();
+</script>
+{% endblock %}

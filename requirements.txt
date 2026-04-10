@@ -1,0 +1,10 @@
+flask
+mediapipe
+opencv-python
+numpy
+scipy
+scikit-learn
+matplotlib
+plotly
+pandas
+fpdf2

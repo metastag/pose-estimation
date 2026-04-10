@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}Analyze Exercise - PT Tracker{% endblock %}
+{% block content %}
+<h1 style="font-size:1.75rem;font-weight:700;margin-bottom:1.5rem;">Analyze Exercise</h1>
+
+<div id="alert-area"></div>
+
+<div class="grid grid-2">
+    <div class="card">
+        <div class="card-header">Upload & Configure</div>
+        <div class="form-group">
+            <label for="patient-id">Patient ID</label>
+            <input type="text" id="patient-id" class="form-control" placeholder="Enter patient identifier" value="patient_001">
+        </div>
+        <div class="form-group">
+            <label for="exercise-select">Exercise</label>
+            <select id="exercise-select" class="form-control">
+                <option value="">Select an exercise...</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Exercise Video</label>
+            <div class="drop-zone" id="drop-zone">
+                <div class="drop-zone-icon">&#127909;</div>
+                <div class="drop-zone-text">
+                    Drag & drop your video here or <strong>click to browse</strong>
+                </div>
+                <div style="font-size:0.8rem;color:var(--gray-400);margin-top:8px;">
+                    Supports MP4, AVI, MOV, WEBM, MKV (max 100MB)
+                </div>
+                <input type="file" id="video-input" accept=".mp4,.avi,.mov,.webm,.mkv" style="display:none;">
+            </div>
+            <div id="file-info" style="margin-top:8px;font-size:0.85rem;color:var(--gray-500);display:none;"></div>
+        </div>
+        <button id="analyze-btn" class="btn btn-primary btn-lg" style="width:100%;justify-content:center;" disabled>
+            Analyze Exercise
+        </button>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Results</div>
+        <div id="results-area">
+            <div class="empty-state">
+                <div class="empty-state-icon">&#128202;</div>
+                <div class="empty-state-title">No analysis yet</div>
+                <div class="empty-state-text">Upload a video and click Analyze to see your results here.</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let selectedFile = null;
+
+function showAlert(msg, type='danger') {
+    const area = document.getElementById('alert-area');
+    area.innerHTML = `<div class="alert alert-${type}">${msg}</div>`;
+    setTimeout(() => area.innerHTML = '', 5000);
+}
+
+function showLoading(text='Processing video...') {
+    document.getElementById('loading-text').textContent = text;
+    document.getElementById('loading-overlay').style.display = 'flex';
+}
+
+function hideLoading() {
+    document.getElementById('loading-overlay').style.display = 'none';
+}
+
+function scoreClass(s) {
+    if (s >= 80) return 'score-excellent';
+    if (s >= 60) return 'score-good';
+    if (s >= 40) return 'score-fair';
+    return 'score-poor';
+}
+
+function severityBadge(sev) {
+    const m = {excellent:'badge-success',good:'badge-primary',fair:'badge-warning',poor:'badge-danger'};
+    return m[sev] || 'badge-primary';
+}
+
+async function loadExercises() {
+    const resp = await fetch('/api/exercises');
+    const data = await resp.json();
+    const sel = document.getElementById('exercise-select');
+    data.exercises.forEach(ex => {
+        const opt = document.createElement('option');
+        opt.value = ex.id;
+        opt.textContent = `${ex.name} (${ex.category})`;
+        sel.appendChild(opt);
+    });
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('exercise')) {
+        sel.value = params.get('exercise');
+    }
+    checkReady();
+}
+
+function checkReady() {
+    const btn = document.getElementById('analyze-btn');
+    btn.disabled = !(selectedFile && document.getElementById('exercise-select').value);
+}
+
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('video-input');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+function handleFile(file) {
+    selectedFile = file;
+    const info = document.getElementById('file-info');
+    info.style.display = 'block';
+    const sizeMB = (file.size / (1024 * 1024)).toFixed(1);
+    info.innerHTML = `<strong>${file.name}</strong> (${sizeMB} MB)`;
+    dropZone.innerHTML = `<div style="font-size:2rem;">&#9989;</div><div class="drop-zone-text"><strong>${file.name}</strong> selected</div>`;
+    checkReady();
+}
+
+document.getElementById('exercise-select').addEventListener('change', checkReady);
+
+document.getElementById('analyze-btn').addEventListener('click', async () => {
+    if (!selectedFile || !document.getElementById('exercise-select').value) return;
+
+    const patientId = document.getElementById('patient-id').value.trim() || 'default_patient';
+    const exerciseId = document.getElementById('exercise-select').value;
+
+    const formData = new FormData();
+    formData.append('video', selectedFile);
+    formData.append('exercise_id', exerciseId);
+    formData.append('patient_id', patientId);
+
+    showLoading('Analyzing your exercise...');
+
+    try {
+        const resp = await fetch('/api/analyze', { method: 'POST', body: formData });
+        const data = await resp.json();
+        hideLoading();
+
+        if (!resp.ok) {
+            showAlert(data.error || 'An error occurred during analysis.');
+            return;
+        }
+
+        renderResults(data, patientId, exerciseId);
+    } catch (err) {
+        hideLoading();
+        showAlert('Network error: ' + err.message);
+    }
+});
+
+function renderResults(data, patientId, exerciseId) {
+    const area = document.getElementById('results-area');
+    const sc = scoreClass(data.overall_score);
+
+    let feedbackHtml = '';
+    if (data.summary_feedback && data.summary_feedback.length) {
+        feedbackHtml = data.summary_feedback.map(fb => `
+            <div class="feedback-item feedback-${fb.severity}">
+                <div class="feedback-icon">${fb.severity === 'excellent' ? '&#9989;' : fb.severity === 'good' ? '&#128176;' : fb.severity === 'fair' ? '&#9888;' : '&#10060;'}</div>
+                <div>
+                    <div class="feedback-joint">${fb.joint.replace(/_/g,' ').replace(/\b\w/g,l=>l.toUpperCase())} <span class="badge ${severityBadge(fb.severity)}">${fb.severity}</span></div>
+                    <div class="feedback-message">${fb.message}</div>
+                    <div style="font-size:0.8rem;color:var(--gray-400);margin-top:2px;">Error: ${fb.error}&deg; | Target: ${fb.target_angle}&deg;</div>
+                </div>
+            </div>
+        `).join('');
+    }
+
+    let repScoresHtml = '';
+    if (data.rep_scores && data.rep_scores.length) {
+        repScoresHtml = `<div style="margin-top:12px;"><strong>Per-Rep Scores:</strong><div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap;">` +
+            data.rep_scores.map((s, i) => `<span class="badge ${s >= 70 ? 'badge-success' : s >= 50 ? 'badge-warning' : 'badge-danger'}">Rep ${i+1}: ${s}</span>`).join('') +
+            `</div></div>`;
+    }
+
+    area.innerHTML = `
+        <div style="text-align:center;margin-bottom:1rem;">
+            <div class="score-circle ${sc}"><div class="score-value">${data.overall_score}</div></div>
+            <div style="font-size:0.85rem;color:var(--gray-500);margin-top:4px;">Overall Score</div>
+        </div>
+        <div class="grid grid-3" style="margin-bottom:1rem;">
+            <div class="stat-card"><div class="stat-value" style="font-size:1.3rem;">${data.num_reps}</div><div class="stat-label">Reps</div></div>
+            <div class="stat-card"><div class="stat-value" style="font-size:1.3rem;">${data.detected_frames}</div><div class="stat-label">Frames</div></div>
+            <div class="stat-card"><div class="stat-value" style="font-size:1.3rem;">${data.total_frames}</div><div class="stat-label">Total</div></div>
+        </div>
+        ${repScoresHtml}
+        <div style="margin-top:1rem;"><strong>Top Feedback</strong></div>
+        ${feedbackHtml || '<p style="color:var(--gray-400);font-size:0.9rem;margin-top:8px;">No significant deviations detected.</p>'}
+        <div style="margin-top:1.5rem;display:flex;gap:8px;">
+            <a href="/progress?patient=${patientId}&exercise=${exerciseId}" class="btn btn-outline">View Progress</a>
+            <a href="/api/report/${patientId}/${exerciseId}" class="btn btn-primary" target="_blank">Download PDF Report</a>
+        </div>
+    `;
+}
+
+loadExercises();
+</script>
+{% endblock %}

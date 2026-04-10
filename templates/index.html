@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}PT Progress Tracker - Home{% endblock %}
+{% block content %}
+<div class="hero">
+    <h1>AI-Driven Pose Estimation for Rehabilitation</h1>
+    <p>Track your physical therapy exercises with real-time AI feedback. Compare your form against gold standards and monitor your recovery progress over time.</p>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+        <a href="/analyze" class="btn btn-lg" style="background:white;color:var(--primary);">Analyze Exercise</a>
+        <a href="/progress" class="btn btn-lg btn-outline" style="color:white;border-color:white;">View Progress</a>
+    </div>
+</div>
+
+<div class="grid grid-4">
+    <div class="stat-card">
+        <div class="stat-value">5</div>
+        <div class="stat-label">Supported Exercises</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">11</div>
+        <div class="stat-label">Tracked Joints</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">33</div>
+        <div class="stat-label">Pose Landmarks</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value">3D</div>
+        <div class="stat-label">Pose Estimation</div>
+    </div>
+</div>
+
+<div class="grid grid-3" style="margin-top:0.5rem;">
+    <div class="card">
+        <div style="font-size:2rem;margin-bottom:8px;">1</div>
+        <div class="card-header" style="margin-bottom:4px;">Upload Video</div>
+        <p style="font-size:0.9rem;color:var(--gray-500);">Record yourself performing a prescribed exercise and upload the video through the analyze page.</p>
+    </div>
+    <div class="card">
+        <div style="font-size:2rem;margin-bottom:8px;">2</div>
+        <div class="card-header" style="margin-bottom:4px;">AI Analysis</div>
+        <p style="font-size:0.9rem;color:var(--gray-500);">Our pose estimation engine extracts your skeletal pose, compares it against gold standard templates, and scores your form.</p>
+    </div>
+    <div class="card">
+        <div style="font-size:2rem;margin-bottom:8px;">3</div>
+        <div class="card-header" style="margin-bottom:4px;">Track Progress</div>
+        <p style="font-size:0.9rem;color:var(--gray-500);">View your scores over time, download PDF reports, and get actionable feedback to improve your rehabilitation outcomes.</p>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">How It Works</div>
+    <p style="color:var(--gray-600);font-size:0.95rem;max-width:800px;">
+        The PT Progress Tracker uses MediaPipe's pose estimation to extract 33 3D body landmarks from your exercise video.
+        Joint angles are computed and compared against clinically-informed gold standard templates with weighted scoring
+        that accounts for the clinical significance of each joint. Errors in critical joints like the knee or spine are
+        penalized more heavily than peripheral joints. The system identifies the top deviations and maps them to
+        human-readable feedback cues, helping you correct your form in real time.
+    </p>
+</div>
+{% endblock %}

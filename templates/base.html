@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}PT Progress Tracker{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    {% block head %}{% endblock %}
+</head>
+<body>
+    <nav>
+        <div class="nav-inner">
+            <a href="/" class="brand">
+                <div class="brand-icon">PT</div>
+                <div class="brand-text">PT <span>Tracker</span></div>
+            </a>
+            <ul class="nav-links">
+                <li><a href="/" class="{% if request.path == '/' %}active{% endif %}">Home</a></li>
+                <li><a href="/exercises" class="{% if request.path == '/exercises' %}active{% endif %}">Exercises</a></li>
+                <li><a href="/analyze" class="{% if request.path == '/analyze' %}active{% endif %}">Analyze</a></li>
+                <li><a href="/progress" class="{% if request.path == '/progress' %}active{% endif %}">Progress</a></li>
+            </ul>
+        </div>
+    </nav>
+    <div class="container">
+        {% block content %}{% endblock %}
+    </div>
+    <div id="loading-overlay" class="loading-overlay" style="display:none;">
+        <div class="loading-card">
+            <div class="spinner"></div>
+            <p id="loading-text">Processing video...</p>
+            <p style="font-size:0.8rem;color:var(--gray-400);margin-top:8px;">This may take a moment</p>
+        </div>
+    </div>
+    {% block scripts %}{% endblock %}
+</body>
+</html>
