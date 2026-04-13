@@ -61,19 +61,20 @@ The user visits the `/analyze` page and uploads a video file (mp4, avi, mov, web
 The `PoseEstimator` module (in `modules/pose_estimator.py`) processes every frame of the video:
 
 1. It reads each frame using OpenCV
-2. Converts the image from BGR to RGB color format
-3. Feeds the image into **Google's MediaPipe Pose Landmarker** — a pre-trained deep learning model
-4. The model outputs **33 body landmark points** in 3D (x, y, z) — things like shoulders, elbows, knees, ankles, etc.
+2. Feeds the image into a **self-trained YOLOv8-pose model** — a deep learning model fine-tuned on a subset of the COCO keypoints dataset
+3. The model outputs **17 body landmark points** in 2D (x, y) with confidence scores — things like shoulders, elbows, knees, ankles, etc.
 
-> **What is MediaPipe Pose Landmarker?**
-> It's a neural network made by Google that's already trained to find human body positions in images. Think of it like a very smart tool that looks at a photo and says "the left knee is at pixel (340, 520)" for 33 different body points. This project uses the "heavy" version which is the most accurate but slowest variant.
+> **What is YOLOv8-pose?**
+> It's a pose estimation model from the Ultralytics YOLO family. The project starts from a pretrained YOLOv8 nano pose checkpoint and fine-tunes it on a **10% subset** of the COCO keypoints dataset (~12K images) for 30 epochs. Training is performed on Google Colab with a T4 GPU and takes ~40-50 minutes. Since it starts from pretrained weights (already trained on full COCO), even this shorter training run produces a usable model. The resulting model file (`pttracker-pose.pt`) detects 17 body keypoints per person in an image.
 
 ### Step 3: Calculate Joint Angles
 
-From those 33 landmarks, the system calculates **11 joint angles** per frame:
+From those 17 keypoints, the system calculates **11 joint angles** per frame:
 
 - **10 body joints** (left and right): shoulder, elbow, hip, knee, ankle
 - **1 trunk lean** — how far forward the upper body is leaning
+
+Note: Since COCO keypoints don't include foot/toe sub-points (unlike MediaPipe's 33-point scheme), ankle angles are estimated using a heuristic that extrapolates the foot position based on the person's facing direction.
 
 The angle at each joint is calculated using basic vector math: if you have three points A–B–C, the angle at B is computed using the dot product of vectors BA and BC. This is the standard geometric angle formula.
 
@@ -140,59 +141,67 @@ The `ReportGenerator` (in `modules/report_generator.py`) creates PDF reports wit
 
 ### What Model Is Used?
 
-The project uses **Google's MediaPipe Pose Landmarker** model, specifically the **"heavy"** variant. The model file is `pose_landmarker_heavy.task`.
+The project uses a **self-trained YOLOv8-pose model**, fine-tuned from a `yolov8n-pose.pt` (nano variant) pretrained checkpoint on a subset of the COCO keypoints dataset. The trained model file is `pttracker-pose.pt`.
 
 ### Where Does the Model Come From?
 
-The model is **pre-trained by Google** and downloaded separately. It must be placed at `~/.mediapipe/pose_landmarker.task`. This project does **not** train any neural network — it only uses the model for inference (making predictions).
+The model is **trained by the project author** using a Google Colab notebook (see `notebooks/train_pose_model.ipynb`). The training pipeline:
+
+1. Starts from the Ultralytics `yolov8n-pose.pt` pretrained weights
+2. Fine-tunes on a **10% subset** of the COCO keypoints dataset (~12K of the ~118K training images per epoch)
+3. Trains for **30 epochs** with early stopping (patience=10)
+4. Uses a lower learning rate (0.005) suitable for fine-tuning from pretrained weights
+5. Disables mosaic augmentation for the last 15 epochs (`close_mosaic=15`) for cleaner final weights
+6. Caches images in RAM (`cache=True`) after the first epoch for faster subsequent epochs
+7. Validates on COCO val2017
+8. Exports the best weights as `pttracker-pose.pt`
+
+Training takes ~40-50 minutes on a free Google Colab T4 GPU (including ~10 min for the COCO dataset auto-download on first run). Since the model starts from pretrained weights that were already trained on the full COCO dataset, even this shorter fine-tuning run on a subset produces a model that performs decently for the PT Tracker use case.
+
+The model file must be placed at `~/.pttracker/pttracker-pose.pt`. If this file is not found, the system falls back to the standard `yolov8n-pose.pt` pretrained model.
 
 ### What Does the Model Do?
 
-The model takes a single RGB image and outputs **33 body landmarks**, each with (x, y, z) coordinates:
+The model takes a single RGB image and outputs **17 COCO keypoints**, each with (x, y, confidence):
 
 | Index | Landmark | Index | Landmark |
 |-------|----------|-------|----------|
-| 0 | Nose | 17-22 | Hand/finger points |
-| 11 | Left shoulder | 12 | Right shoulder |
-| 13 | Left elbow | 14 | Right elbow |
-| 15 | Left wrist | 16 | Right wrist |
-| 23 | Left hip | 24 | Right hip |
-| 25 | Left knee | 26 | Right knee |
-| 27 | Left ankle | 28 | Right ankle |
-| 29-30 | Heel points | 31-32 | Foot index points |
+| 0 | Nose | 9 | Left wrist |
+| 1 | Left eye | 10 | Right wrist |
+| 2 | Right eye | 11 | Left hip |
+| 3 | Left ear | 12 | Right hip |
+| 4 | Right ear | 13 | Left knee |
+| 5 | Left shoulder | 14 | Right knee |
+| 6 | Right shoulder | 15 | Left ankle |
+| 7 | Left elbow | 16 | Right ankle |
+| 8 | Right elbow | | |
 
 ### How Does the Model Run?
 
 ```python
 # Simplified version of what happens in pose_estimator.py:
 
-import mediapipe as mp
+from ultralytics import YOLO
 
 # 1. Load the model
-options = mp.tasks.vision.PoseLandmarkerOptions(
-    base_options=mp.tasks.BaseOptions(
-        model_asset_path="~/.mediapipe/pose_landmarker.task"
-    ),
-    running_mode=mp.tasks.vision.RunningMode.VIDEO,
-    min_tracking_confidence=0.5
-)
-landmarker = mp.tasks.vision.PoseLandmarker.create_from_options(options)
+model = YOLO("~/.pttracker/pttracker-pose.pt")
 
 # 2. For each video frame:
-mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-result = landmarker.detect_for_video(mp_image, timestamp_ms)
+results = model(frame, conf=0.5)
 
-# 3. result.pose_landmarks contains the 33 landmark points
+# 3. Extract keypoints for the most prominent person
+keypoints = results[0].keypoints.data[0]  # shape: (17, 3) - x, y, confidence
 ```
 
 Key details:
-- The model runs in **VIDEO mode** — this means it processes frames sequentially with timestamps, which gives it temporal context (it can use information from previous frames to be more accurate)
-- The **confidence threshold** is 0.5 — if the model is less than 50% confident about tracking a landmark, it may drop it
-- The landmarker is **re-created for every video** — this is required because VIDEO mode maintains internal state per stream
+- Each frame is processed **independently** (no temporal tracking between frames)
+- The **confidence threshold** is 0.5 — keypoints below this confidence are filtered out
+- If multiple people are detected, the **largest bounding box** is selected as the subject
+- A minimum of 6 major body keypoints must be detected for a frame to be included in analysis
 
 ### How Are Landmarks Turned Into Angles?
 
-The project defines joints as triples of landmark indices. For example, the left knee angle uses landmarks: left hip (23) → left knee (25) → left ankle (27). The angle at the knee is calculated:
+The project defines joints as triples of keypoint indices (using the COCO 17-point scheme). For example, the left knee angle uses keypoints: left hip (11) → left knee (13) → left ankle (15). The angle at the knee is calculated:
 
 ```
 vector_1 = hip - knee      (from knee toward hip)
@@ -262,7 +271,7 @@ Response: JSON with score, rep_count, feedback, joint_errors, etc.
 | Setting | Value | What It Means |
 |---------|-------|---------------|
 | `MAX_CONTENT_LENGTH` | 100 MB | Maximum video upload size |
-| `MEDIAPIPE_CONFIDENCE` | 0.5 | How confident the AI needs to be to track a landmark (0–1) |
+| `YOLO_CONFIDENCE` | 0.5 | How confident the AI needs to be to track a landmark (0–1) |
 | `TOP_K_DEVIATIONS` | 3 | How many problem areas to report in feedback |
 | `ANGLE_TOLERANCE_DEFAULT` | 15° | Default acceptable deviation from ideal angle |
 | Scoring: `max_error` | 45° | Maximum error that contributes to score (larger errors are capped) |
@@ -279,7 +288,7 @@ Response: JSON with score, rep_count, feedback, joint_errors, etc.
 | Package | What It's Used For |
 |---------|-------------------|
 | **flask** | Web server — routes, pages, API, file uploads |
-| **mediapipe** | The AI pose detection model (core of the system) |
+| **ultralytics** | The AI pose detection model — YOLOv8-pose (self-trained) |
 | **opencv-python** | Reading video files frame by frame, drawing skeleton overlay |
 | **numpy** | Math operations for angle calculations |
 | **scipy** | Peak detection for counting exercise repetitions |
@@ -316,8 +325,8 @@ Each JSON file contains: patient ID, exercise ID, overall score, rep count, fram
    pip install -r requirements.txt
    ```
 
-2. **Download the MediaPipe model:**
-   The `pose_landmarker_heavy.task` model file must be downloaded from Google and placed at `~/.mediapipe/pose_landmarker.task`.
+2. **Train the pose model:**
+   Upload `notebooks/train_pose_model.ipynb` to Google Colab, run all cells with a T4 GPU runtime, and download the resulting `pttracker-pose.pt` file. Training takes ~40-50 minutes on a free Colab T4 GPU. Place the file at `~/.pttracker/pttracker-pose.pt`. If this file is missing, the app will fall back to the pretrained `yolov8n-pose.pt` model (auto-downloaded by Ultralytics).
 
 3. **Run the Flask app:**
    ```bash
@@ -338,7 +347,7 @@ Each JSON file contains: patient ID, exercise ID, overall score, rep count, fram
 ```
 ┌─────────────┐     ┌──────────────────┐     ┌───────────────────┐
 │  User Uploads │────▶│  PoseEstimator    │────▶│ ComparisonEngine   │
-│  Video        │     │  (AI Model)       │     │ (Scoring + Reps)   │
+│  Video        │     │  (YOLOv8 Model)   │     │ (Scoring + Reps)   │
 └─────────────┘     └──────────────────┘     └────────┬──────────┘
                                                        │
                             ┌──────────────────────────┤

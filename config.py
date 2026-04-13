@@ -11,59 +11,59 @@ ALLOWED_EXTENSIONS = {'mp4', 'avi', 'mov', 'webm', 'mkv'}
 
 MAX_CONTENT_LENGTH = 100 * 1024 * 1024
 
-MEDIAPIPE_CONFIDENCE = 0.5
+YOLO_CONFIDENCE = 0.5
 
 TOP_K_DEVIATIONS = 3
 ANGLE_TOLERANCE_DEFAULT = 15.0
 
 JOINT_DEFINITIONS = {
     'left_shoulder': {
-        'landmarks': (23, 11, 13),
+        'landmarks': (11, 5, 7),
         'weight': 1.0,
         'label': 'Left Shoulder',
     },
     'right_shoulder': {
-        'landmarks': (24, 12, 14),
+        'landmarks': (12, 6, 8),
         'weight': 1.0,
         'label': 'Right Shoulder',
     },
     'left_elbow': {
-        'landmarks': (11, 13, 15),
+        'landmarks': (5, 7, 9),
         'weight': 0.7,
         'label': 'Left Elbow',
     },
     'right_elbow': {
-        'landmarks': (12, 14, 16),
+        'landmarks': (6, 8, 10),
         'weight': 0.7,
         'label': 'Right Elbow',
     },
     'left_hip': {
-        'landmarks': (11, 23, 25),
+        'landmarks': (5, 11, 13),
         'weight': 1.3,
         'label': 'Left Hip',
     },
     'right_hip': {
-        'landmarks': (12, 24, 26),
+        'landmarks': (6, 12, 14),
         'weight': 1.3,
         'label': 'Right Hip',
     },
     'left_knee': {
-        'landmarks': (23, 25, 27),
+        'landmarks': (11, 13, 15),
         'weight': 1.5,
         'label': 'Left Knee',
     },
     'right_knee': {
-        'landmarks': (24, 26, 28),
+        'landmarks': (12, 14, 16),
         'weight': 1.5,
         'label': 'Right Knee',
     },
     'left_ankle': {
-        'landmarks': (25, 27, 31),
+        'landmarks': (13, 15, -1),
         'weight': 1.0,
         'label': 'Left Ankle',
     },
     'right_ankle': {
-        'landmarks': (26, 28, 32),
+        'landmarks': (14, 16, -1),
         'weight': 1.0,
         'label': 'Right Ankle',
     },

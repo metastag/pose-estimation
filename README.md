@@ -47,7 +47,7 @@ Key settings in `config.py`:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `MAX_CONTENT_LENGTH` | 100 MB | Max video upload size |
-| `MEDIAPIPE_CONFIDENCE` | 0.5 | AI model confidence threshold |
+| `YOLO_CONFIDENCE` | 0.5 | AI model confidence threshold |
 | `ANGLE_TOLERANCE_DEFAULT` | 15° | Default joint tolerance |
 
 ---
@@ -55,7 +55,7 @@ Key settings in `config.py`:
 ## Dependencies
 
 - **flask** — Web framework
-- **mediapipe** — AI pose estimation model
+- **ultralytics** — AI pose estimation model (YOLOv8-pose)
 - **opencv-python** — Video processing
 - **numpy** — Math operations
 - **scipy** — Peak detection for rep counting
